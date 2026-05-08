@@ -2,6 +2,7 @@
 #include "ipc/mcp_server.h"
 #include <sstream>
 #include <WDBGEXTS.H>
+#include <sddl.h>  // ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1
 
 // Buffer size for reading from the pipe
 constexpr DWORD BUFFER_SIZE = 4096;
@@ -91,7 +92,39 @@ bool MCPServer::BroadcastMessage(const json& message) {
     return true;
 }
 
+// Build a SECURITY_ATTRIBUTES that grants everyone full access and lowers the
+// pipe's mandatory integrity label to "Low", so that medium-IL processes
+// (e.g. a non-elevated IDE / MCP client) can connect to a pipe owned by a
+// high-IL process (elevated WinDbg). Caller owns and must LocalFree() pSD.
+static bool BuildLowILSecurityAttributes(SECURITY_ATTRIBUTES& sa, PSECURITY_DESCRIPTOR& pSD) {
+    // SDDL:
+    //   D:(A;;GA;;;WD)        DACL - Allow Generic All to Everyone (World)
+    //   S:(ML;;NW;;;LW)       SACL - Mandatory Label "Low IL", No-Write-Up
+    //                         (lowers required IL so medium clients can open)
+    LPCWSTR sddl = L"D:(A;;GA;;;WD)S:(ML;;NW;;;LW)";
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl, SDDL_REVISION_1, &pSD, NULL)) {
+        return false;
+    }
+    ZeroMemory(&sa, sizeof(sa));
+    sa.nLength = sizeof(sa);
+    sa.lpSecurityDescriptor = pSD;
+    sa.bInheritHandle = FALSE;
+    return true;
+}
+
 HANDLE MCPServer::CreatePipeInstance() {
+    SECURITY_ATTRIBUTES sa{};
+    PSECURITY_DESCRIPTOR pSD = NULL;
+    LPSECURITY_ATTRIBUTES psa = NULL;
+    if (BuildLowILSecurityAttributes(sa, pSD)) {
+        psa = &sa;
+    } else {
+        dprintf("MCPServer: BuildLowILSecurityAttributes failed (err=%d), "
+                "falling back to default ACL (admin-only access)\n",
+                GetLastError());
+    }
+
     // Create a new pipe instance with message-read mode
     HANDLE hPipe = CreateNamedPipeA(
         m_pipeName.c_str(),                // Pipe name
@@ -103,10 +136,14 @@ HANDLE MCPServer::CreatePipeInstance() {
         BUFFER_SIZE,                       // Output buffer size
         BUFFER_SIZE,                       // Input buffer size
         0,                                 // Default time-out (50 ms)
-        NULL);                             // Default security attributes
+        psa);                              // Custom or default security attributes
 
     if (hPipe == INVALID_HANDLE_VALUE) {
         dprintf("MCPServer: CreateNamedPipe failed with error %d\n", GetLastError());
+    }
+
+    if (pSD) {
+        LocalFree(pSD);
     }
 
     return hPipe;
