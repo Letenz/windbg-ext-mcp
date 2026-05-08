@@ -57,6 +57,16 @@ public:
      */
     static json ForEachModuleHandler(const json& message);
 
+    /**
+     * @brief Programmatically interrupt (break in) a running kernel target.
+     *        Equivalent to clicking "Break" on the WinDbg toolbar.
+     *        After it returns successfully the target is in broken state and
+     *        regular execute_command calls will work again.
+     * @param message JSON message; supports args.timeout_ms (default 10000).
+     * @return JSON response with break-in status and new lastevent info.
+     */
+    static json BreakInHandler(const json& message);
+
 
 
     /**

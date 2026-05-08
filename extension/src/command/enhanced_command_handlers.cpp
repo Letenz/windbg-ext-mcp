@@ -5,6 +5,7 @@
 #include <ctime>  // For std::time and gmtime_s
 #include <algorithm>  // For std::max and std::min
 #include <sstream>  // For std::istringstream
+#include <atlcomcli.h>  // CComPtr, CComQIPtr (for BreakInHandler)
 
 void EnhancedCommandHandlers::RegisterHandlers(MCPServer& server) {
     // Register enhanced command handlers
@@ -12,10 +13,112 @@ void EnhancedCommandHandlers::RegisterHandlers(MCPServer& server) {
     server.RegisterHandler("execute_command_enhanced", ExecuteCommandEnhancedHandler);
     server.RegisterHandler("execute_command_streaming", ExecuteCommandStreamingHandler);
     server.RegisterHandler("for_each_module", ForEachModuleHandler);
-    
+    server.RegisterHandler("break_in", BreakInHandler);
+}
 
-    
+json EnhancedCommandHandlers::BreakInHandler(const json& message) {
+    int id = message.value("id", 0);
+    auto args = message.value("args", json::object());
+    unsigned int timeout = args.value("timeout_ms", 10000u);
 
+    try {
+        // Create our own debug client/control. SetInterrupt is broadcast to all
+        // dbgeng clients in the engine, including the WinDbg UI's, so issuing
+        // it from a fresh client wakes up the running target.
+        CComPtr<IDebugClient> client;
+        HRESULT hr = DebugCreate(__uuidof(IDebugClient), (void**)&client);
+        if (FAILED(hr)) {
+            return CommandUtilities::CreateDetailedErrorResponse(
+                id, "break_in", "DebugCreate failed",
+                ErrorCategory::InternalError, hr);
+        }
+
+        CComQIPtr<IDebugControl> control(client);
+        if (!control) {
+            return CommandUtilities::CreateDetailedErrorResponse(
+                id, "break_in", "QI IDebugControl failed",
+                ErrorCategory::InternalError, E_NOINTERFACE);
+        }
+
+        // Check current execution status; if already halted just report that.
+        ULONG execStatus = 0;
+        control->GetExecutionStatus(&execStatus);
+        bool wasRunning =
+            (execStatus == DEBUG_STATUS_GO ||
+             execStatus == DEBUG_STATUS_GO_HANDLED ||
+             execStatus == DEBUG_STATUS_GO_NOT_HANDLED ||
+             execStatus == DEBUG_STATUS_STEP_OVER ||
+             execStatus == DEBUG_STATUS_STEP_INTO);
+
+        if (!wasRunning) {
+            json resp = {
+                {"type", "response"},
+                {"id", id},
+                {"status", "success"},
+                {"command", "break_in"},
+                {"output", "Target was already broken-in (no interrupt needed)."},
+                {"already_broken", true},
+                {"prior_execution_status", execStatus},
+            };
+            return resp;
+        }
+
+        // Issue the interrupt request. SetInterrupt is async: it signals the
+        // main WinDbg engine loop to halt the target; the state transition
+        // happens when *that* loop's WaitForEvent returns. We must NOT call
+        // WaitForEvent on our own freshly-created client, because this client
+        // is not attached to the target's event source and will immediately
+        // fail (no event loop, no session).
+        hr = control->SetInterrupt(DEBUG_INTERRUPT_ACTIVE);
+        if (FAILED(hr)) {
+            return CommandUtilities::CreateDetailedErrorResponse(
+                id, "break_in", "SetInterrupt failed",
+                ErrorCategory::InternalError, hr);
+        }
+
+        // Poll GetExecutionStatus until it shows a non-GO state (the main
+        // WinDbg loop will update it once it consumes the break event).
+        DWORD waitedMs = 0;
+        const DWORD pollIntervalMs = 100;
+        ULONG newStatus = execStatus;
+        while (waitedMs < timeout) {
+            Sleep(pollIntervalMs);
+            waitedMs += pollIntervalMs;
+            control->GetExecutionStatus(&newStatus);
+            if (newStatus != DEBUG_STATUS_GO &&
+                newStatus != DEBUG_STATUS_GO_HANDLED &&
+                newStatus != DEBUG_STATUS_GO_NOT_HANDLED &&
+                newStatus != DEBUG_STATUS_STEP_OVER &&
+                newStatus != DEBUG_STATUS_STEP_INTO) {
+                break;
+            }
+        }
+
+        bool nowBroken = (newStatus != DEBUG_STATUS_GO &&
+                          newStatus != DEBUG_STATUS_GO_HANDLED &&
+                          newStatus != DEBUG_STATUS_GO_NOT_HANDLED);
+
+        json resp = {
+            {"type", "response"},
+            {"id", id},
+            {"status", nowBroken ? "success" : "error"},
+            {"command", "break_in"},
+            {"output", nowBroken
+                          ? "Target interrupted (break-in completed)."
+                          : "SetInterrupt issued but target still running after timeout."},
+            {"prior_execution_status", execStatus},
+            {"current_execution_status", newStatus},
+            {"waited_ms", waitedMs},
+            {"timeout_ms", timeout},
+        };
+        return resp;
+    }
+    catch (const std::exception& e) {
+        return CommandUtilities::CreateDetailedErrorResponse(
+            id, "break_in",
+            std::string("BreakInHandler exception: ") + e.what(),
+            ErrorCategory::InternalError);
+    }
 }
 
 json EnhancedCommandHandlers::ExecuteCommandHandler(const json& message) {
