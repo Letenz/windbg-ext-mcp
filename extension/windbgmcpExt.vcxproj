@@ -146,12 +146,14 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir);$(ProjectDir)include;$(WindowsSdkDir)Include\10.0.22621.0\um;$(WindowsSdkDir)Include\10.0.22621.0\shared;$(WindowsSdkDir)Debuggers\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <DebugInformationFormat>None</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>src\windbgmcpExt.def</ModuleDefinitionFile>
       <AdditionalLibraryDirectories>$(WindowsSdkDir)Lib\10.0.22621.0\um\x64;$(WindowsSdkDir)Debuggers\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
