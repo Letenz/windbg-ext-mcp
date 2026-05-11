@@ -12,7 +12,13 @@ from core.validation import validate_command, is_safe_for_automation
 from core.context import get_context_manager, save_context, restore_context
 from core.error_handler import enhance_error, error_enhancer, DebugContext, ErrorCategory
 from core.hints import get_parameter_help, validate_tool_parameters
-from core.communication import send_command, CommunicationError, TimeoutError, ConnectionError
+from core.communication import (
+    send_command,
+    send_handler_command,
+    CommunicationError,
+    TimeoutError,
+    ConnectionError,
+)
 from core.execution import get_executor, execute_command as execute_unified
 
 from .tool_utilities import (
@@ -25,7 +31,16 @@ def register_execution_tools(mcp: FastMCP):
     """Register all command execution tools."""
     
     @mcp.tool()
-    async def run_command(ctx: Context, action: str = "", command: str = "", validate: bool = True, resilient: bool = True, optimize: bool = True) -> Union[str, Dict[str, Any]]:
+    async def run_command(
+        ctx: Context,
+        action: str = "",
+        command: str = "",
+        validate: bool = True,
+        resilient: bool = True,
+        optimize: bool = True,
+        timeout_ms: Optional[int] = None,
+        timeout_category: str = "",
+    ) -> Union[str, Dict[str, Any]]:
         """
         Execute a WinDbg command with validation, resilience, and performance optimization.
         
@@ -36,6 +51,10 @@ def register_execution_tools(mcp: FastMCP):
             validate: Whether to validate the command for safety (default: True)
             resilient: Whether to use resilient execution with retries (default: True)  
             optimize: Whether to use performance optimization (default: True)
+            timeout_ms: Optional explicit timeout in milliseconds. Use this for
+                execution-control commands such as `g` where the timeout is the
+                intended run window.
+            timeout_category: Optional timeout category override.
             
         Returns:
             Command result or error information
@@ -83,7 +102,9 @@ def register_execution_tools(mcp: FastMCP):
                 command=command,
                 resilient=resilient,
                 optimize=optimize,
-                async_mode=False  # Keep synchronous for tool compatibility
+                async_mode=False,  # Keep synchronous for tool compatibility
+                timeout_ms=timeout_ms,
+                timeout_category=timeout_category or None,
             )
             
             if execution_result.success:
@@ -113,6 +134,31 @@ def register_execution_tools(mcp: FastMCP):
                                          tool_name="run_command", 
                                          command=command, 
                                          original_error=str(e))
+            return enhanced_error.to_dict()
+
+    @mcp.tool()
+    async def break_in(ctx: Context, timeout_ms: int = 10000) -> Dict[str, Any]:
+        """
+        Interrupt a running target and wait until WinDbg reports a broken state.
+
+        This maps to the C++ extension's `break_in` pipe handler. Use it before
+        inspection commands (`lm`, `.dbgprint`, `!analyze -v`) whenever the
+        guest was previously resumed with `g`.
+        """
+        try:
+            transport_timeout_ms = max(timeout_ms + 5000, 15000)
+            return send_handler_command(
+                "break_in",
+                timeout_ms=transport_timeout_ms,
+                handler_args={"timeout_ms": timeout_ms},
+            )
+        except Exception as e:
+            enhanced_error = enhance_error(
+                "unexpected",
+                tool_name="break_in",
+                command="break_in",
+                original_error=str(e),
+            )
             return enhanced_error.to_dict()
 
     @mcp.tool()
@@ -516,4 +562,4 @@ def register_execution_tools(mcp: FastMCP):
             error_dict = enhanced_error.to_dict()
             error_dict["partial_results"] = results
             error_dict["breakpoint"] = breakpoint
-            return error_dict 
+            return error_dict

@@ -52,11 +52,15 @@ class DirectStrategy(ExecutionStrategy):
         timeout_resolver = get_timeout_resolver()
         
         try:
-            # Resolve timeout
-            timeout_ms, category = timeout_resolver.resolve_timeout_and_category(
-                context.command, 
+            # Resolve timeout. Explicit tool-level timeout_ms wins over the
+            # category resolver; this is required for execution-control
+            # commands such as "g" where the caller intentionally chooses the
+            # run window.
+            resolved_timeout_ms, category = timeout_resolver.resolve_timeout_and_category(
+                context.command,
                 category_override=context.timeout_category
             )
+            timeout_ms = context.timeout_ms or resolved_timeout_ms
             
             logger.debug(f"Direct execution: {context.command} (timeout: {timeout_ms}ms, category: {category})")
             
@@ -106,10 +110,11 @@ class ResilientStrategy(ExecutionStrategy):
         timeout_resolver = get_timeout_resolver()
         
         # Resolve timeout and category
-        timeout_ms, category = timeout_resolver.resolve_timeout_and_category(
+        resolved_timeout_ms, category = timeout_resolver.resolve_timeout_and_category(
             context.command,
             category_override=context.timeout_category
         )
+        timeout_ms = context.timeout_ms or resolved_timeout_ms
         
         logger.debug(f"Resilient execution: {context.command} (timeout: {timeout_ms}ms, category: {category})")
         
@@ -166,10 +171,11 @@ class OptimizedStrategy(ExecutionStrategy):
         timeout_resolver = get_timeout_resolver()
         
         # Resolve timeout and category
-        timeout_ms, category = timeout_resolver.resolve_timeout_and_category(
+        resolved_timeout_ms, category = timeout_resolver.resolve_timeout_and_category(
             context.command,
             category_override=context.timeout_category
         )
+        timeout_ms = context.timeout_ms or resolved_timeout_ms
         
         logger.debug(f"Optimized execution: {context.command} (timeout: {timeout_ms}ms, category: {category})")
         
@@ -221,10 +227,11 @@ class AsyncStrategy(ExecutionStrategy):
         timeout_resolver = get_timeout_resolver()
         
         # Resolve timeout and category
-        timeout_ms, category = timeout_resolver.resolve_timeout_and_category(
+        resolved_timeout_ms, category = timeout_resolver.resolve_timeout_and_category(
             context.command,
             category_override=context.timeout_category
         )
+        timeout_ms = context.timeout_ms or resolved_timeout_ms
         
         logger.debug(f"Async execution: {context.command} (timeout: {timeout_ms}ms, category: {category})")
         
@@ -284,4 +291,4 @@ def create_strategy(
     elif resilient:
         return ResilientStrategy()
     else:
-        return DirectStrategy() 
+        return DirectStrategy()

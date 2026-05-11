@@ -33,6 +33,7 @@ def execute_command(
     optimize: bool = True,
     async_mode: bool = False,
     timeout_category: str = None,
+    timeout_ms: int = None,
     context: dict = None
 ) -> ExecutionResult:
     """
@@ -44,6 +45,7 @@ def execute_command(
         optimize: Whether to use performance optimization
         async_mode: Whether to execute asynchronously  
         timeout_category: Optional timeout category override
+        timeout_ms: Optional explicit timeout in milliseconds
         context: Optional execution context
         
     Returns:
@@ -56,6 +58,7 @@ def execute_command(
         optimize=optimize,
         async_mode=async_mode,
         timeout_category=timeout_category,
+        timeout_ms=timeout_ms,
         context=context
     )
 

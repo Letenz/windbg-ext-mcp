@@ -444,11 +444,19 @@ class CommunicationManager:
             logger.error(f"Unexpected error executing command '{command}': {e}")
             raise CommunicationError(f"Error executing command: {str(e)}")
     
-    def send_handler_command(self, handler_name: str, timeout_ms: int = DEFAULT_TIMEOUT_MS, **kwargs) -> Dict[str, Any]:
+    def send_handler_command(
+        self,
+        handler_name: str,
+        timeout_ms: int = DEFAULT_TIMEOUT_MS,
+        handler_args: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
         """Send a direct handler command to the WinDbg extension."""
         logger.debug(f"Sending handler command: {handler_name}")
-        
-        message = MessageProtocol.create_handler_message(handler_name, **kwargs)
+
+        args = dict(handler_args or {})
+        args.update(kwargs)
+        message = MessageProtocol.create_handler_message(handler_name, **args)
         
         try:
             response = self._send_message(message, timeout_ms)
@@ -665,20 +673,28 @@ def send_command(command: str, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> str:
     return manager.send_command(command, timeout_ms)
 
 
-def send_handler_command(handler_name: str, timeout_ms: int = DEFAULT_TIMEOUT_MS, **kwargs) -> Dict[str, Any]:
+def send_handler_command(
+    handler_name: str,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    handler_args: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> Dict[str, Any]:
     """
     Send a direct handler command to the WinDbg extension.
     
     Args:
         handler_name: Name of the handler
         timeout_ms: Timeout in milliseconds
-        **kwargs: Additional arguments
+        handler_args: JSON args to pass to the extension handler. Use this for
+            args whose names would collide with wrapper parameters, such as a
+            handler-level ``timeout_ms``.
+        **kwargs: Additional handler arguments
         
     Returns:
         The handler response as a dictionary
     """
     manager = _get_communication_manager()
-    return manager.send_handler_command(handler_name, timeout_ms, **kwargs)
+    return manager.send_handler_command(handler_name, timeout_ms, handler_args, **kwargs)
 
 
 def test_connection() -> bool:
@@ -711,4 +727,4 @@ def diagnose_connection_issues() -> Dict[str, Any]:
         Dictionary containing diagnostic results and recommendations
     """
     manager = _get_communication_manager()
-    return manager.diagnose_connection_issues() 
+    return manager.diagnose_connection_issues()
