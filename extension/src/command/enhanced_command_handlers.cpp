@@ -7,6 +7,66 @@
 #include <sstream>  // For std::istringstream
 #include <atlcomcli.h>  // CComPtr, CComQIPtr (for BreakInHandler)
 
+namespace {
+
+bool IsRunningStatus(ULONG status) {
+    return status == DEBUG_STATUS_GO ||
+           status == DEBUG_STATUS_GO_HANDLED ||
+           status == DEBUG_STATUS_GO_NOT_HANDLED ||
+           status == DEBUG_STATUS_STEP_OVER ||
+           status == DEBUG_STATUS_STEP_INTO ||
+           status == DEBUG_STATUS_STEP_BRANCH ||
+           status == DEBUG_STATUS_REVERSE_GO ||
+           status == DEBUG_STATUS_REVERSE_STEP_BRANCH ||
+           status == DEBUG_STATUS_REVERSE_STEP_OVER ||
+           status == DEBUG_STATUS_REVERSE_STEP_INTO;
+}
+
+const char* ExecutionStatusName(ULONG status) {
+    switch (status) {
+    case DEBUG_STATUS_NO_CHANGE:
+        return "DEBUG_STATUS_NO_CHANGE";
+    case DEBUG_STATUS_GO:
+        return "DEBUG_STATUS_GO";
+    case DEBUG_STATUS_GO_HANDLED:
+        return "DEBUG_STATUS_GO_HANDLED";
+    case DEBUG_STATUS_GO_NOT_HANDLED:
+        return "DEBUG_STATUS_GO_NOT_HANDLED";
+    case DEBUG_STATUS_STEP_OVER:
+        return "DEBUG_STATUS_STEP_OVER";
+    case DEBUG_STATUS_STEP_INTO:
+        return "DEBUG_STATUS_STEP_INTO";
+    case DEBUG_STATUS_BREAK:
+        return "DEBUG_STATUS_BREAK";
+    case DEBUG_STATUS_NO_DEBUGGEE:
+        return "DEBUG_STATUS_NO_DEBUGGEE";
+    case DEBUG_STATUS_STEP_BRANCH:
+        return "DEBUG_STATUS_STEP_BRANCH";
+    case DEBUG_STATUS_IGNORE_EVENT:
+        return "DEBUG_STATUS_IGNORE_EVENT";
+    case DEBUG_STATUS_RESTART_REQUESTED:
+        return "DEBUG_STATUS_RESTART_REQUESTED";
+    case DEBUG_STATUS_REVERSE_GO:
+        return "DEBUG_STATUS_REVERSE_GO";
+    case DEBUG_STATUS_REVERSE_STEP_BRANCH:
+        return "DEBUG_STATUS_REVERSE_STEP_BRANCH";
+    case DEBUG_STATUS_REVERSE_STEP_OVER:
+        return "DEBUG_STATUS_REVERSE_STEP_OVER";
+    case DEBUG_STATUS_REVERSE_STEP_INTO:
+        return "DEBUG_STATUS_REVERSE_STEP_INTO";
+    case DEBUG_STATUS_OUT_OF_SYNC:
+        return "DEBUG_STATUS_OUT_OF_SYNC";
+    case DEBUG_STATUS_WAIT_INPUT:
+        return "DEBUG_STATUS_WAIT_INPUT";
+    case DEBUG_STATUS_TIMEOUT:
+        return "DEBUG_STATUS_TIMEOUT";
+    default:
+        return "DEBUG_STATUS_UNKNOWN";
+    }
+}
+
+} // namespace
+
 void EnhancedCommandHandlers::RegisterHandlers(MCPServer& server) {
     // Register enhanced command handlers
     server.RegisterHandler("execute_command", ExecuteCommandHandler);
@@ -14,6 +74,67 @@ void EnhancedCommandHandlers::RegisterHandlers(MCPServer& server) {
     server.RegisterHandler("execute_command_streaming", ExecuteCommandStreamingHandler);
     server.RegisterHandler("for_each_module", ForEachModuleHandler);
     server.RegisterHandler("break_in", BreakInHandler);
+    server.RegisterHandler("debugger_status", DebuggerStatusHandler);
+}
+
+json EnhancedCommandHandlers::DebuggerStatusHandler(const json& message) {
+    int id = message.value("id", 0);
+
+    try {
+        CComPtr<IDebugClient> client;
+        HRESULT hr = DebugCreate(__uuidof(IDebugClient), (void**)&client);
+        if (FAILED(hr)) {
+            return CommandUtilities::CreateDetailedErrorResponse(
+                id, "debugger_status", "DebugCreate failed",
+                ErrorCategory::InternalError, hr);
+        }
+
+        CComQIPtr<IDebugControl> control(client);
+        if (!control) {
+            return CommandUtilities::CreateDetailedErrorResponse(
+                id, "debugger_status", "QI IDebugControl failed",
+                ErrorCategory::InternalError, E_NOINTERFACE);
+        }
+
+        ULONG execStatus = 0;
+        hr = control->GetExecutionStatus(&execStatus);
+        if (FAILED(hr)) {
+            return CommandUtilities::CreateDetailedErrorResponse(
+                id, "debugger_status", "GetExecutionStatus failed",
+                ErrorCategory::ExecutionContext, hr);
+        }
+
+        bool isRunning = IsRunningStatus(execStatus);
+        bool isBroken =
+            execStatus == DEBUG_STATUS_BREAK ||
+            execStatus == DEBUG_STATUS_WAIT_INPUT ||
+            execStatus == DEBUG_STATUS_TIMEOUT;
+
+        ULONG debuggeeClass = 0;
+        ULONG qualifier = 0;
+        HRESULT debuggeeHr = control->GetDebuggeeType(&debuggeeClass, &qualifier);
+
+        return {
+            {"type", "response"},
+            {"id", id},
+            {"status", "success"},
+            {"command", "debugger_status"},
+            {"execution_status", execStatus},
+            {"execution_status_name", ExecutionStatusName(execStatus)},
+            {"is_running", isRunning},
+            {"is_broken", isBroken},
+            {"can_execute_commands", !isRunning && execStatus != DEBUG_STATUS_NO_DEBUGGEE},
+            {"debuggee_type_hr", debuggeeHr},
+            {"debuggee_class", SUCCEEDED(debuggeeHr) ? debuggeeClass : 0},
+            {"debuggee_qualifier", SUCCEEDED(debuggeeHr) ? qualifier : 0},
+        };
+    }
+    catch (const std::exception& e) {
+        return CommandUtilities::CreateDetailedErrorResponse(
+            id, "debugger_status",
+            std::string("DebuggerStatusHandler exception: ") + e.what(),
+            ErrorCategory::InternalError);
+    }
 }
 
 json EnhancedCommandHandlers::BreakInHandler(const json& message) {
@@ -761,4 +882,3 @@ json EnhancedCommandHandlers::HandleAddressCommand(int id, const std::string& co
     }
 }
 
- 

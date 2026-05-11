@@ -67,6 +67,14 @@ public:
      */
     static json BreakInHandler(const json& message);
 
+    /**
+     * @brief Report the current target execution state without changing it.
+     * @param message JSON message.
+     * @return JSON response with DEBUG_STATUS_* value, running/broken flags,
+     *         and whether normal debugger commands can execute.
+     */
+    static json DebuggerStatusHandler(const json& message);
+
 
 
     /**
@@ -105,4 +113,4 @@ public:
 
 private:
     // Private helper methods can be added here in the future
-}; 
+};
