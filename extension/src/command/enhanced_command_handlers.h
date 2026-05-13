@@ -75,6 +75,15 @@ public:
      */
     static json DebuggerStatusHandler(const json& message);
 
+    /**
+     * @brief Ask the hosting WinDbg process to exit after returning a response.
+     *        Useful when an external MCP client cannot terminate elevated
+     *        WinDbg due to process permissions.
+     * @param message JSON message; supports args.delay_ms and args.exit_code.
+     * @return JSON response confirming that process exit was scheduled.
+     */
+    static json ExitWinDbgHandler(const json& message);
+
 
 
     /**

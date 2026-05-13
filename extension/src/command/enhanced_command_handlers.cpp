@@ -75,6 +75,7 @@ void EnhancedCommandHandlers::RegisterHandlers(MCPServer& server) {
     server.RegisterHandler("for_each_module", ForEachModuleHandler);
     server.RegisterHandler("break_in", BreakInHandler);
     server.RegisterHandler("debugger_status", DebuggerStatusHandler);
+    server.RegisterHandler("exit_windbg", ExitWinDbgHandler);
 }
 
 json EnhancedCommandHandlers::DebuggerStatusHandler(const json& message) {
@@ -238,6 +239,48 @@ json EnhancedCommandHandlers::BreakInHandler(const json& message) {
         return CommandUtilities::CreateDetailedErrorResponse(
             id, "break_in",
             std::string("BreakInHandler exception: ") + e.what(),
+            ErrorCategory::InternalError);
+    }
+}
+
+json EnhancedCommandHandlers::ExitWinDbgHandler(const json& message) {
+    int id = message.value("id", 0);
+
+    try {
+        auto args = message.value("args", json::object());
+        DWORD delayMs = args.value("delay_ms", 250u);
+        DWORD exitCode = args.value("exit_code", 0u);
+        bool dryRun = args.value("dry_run", false);
+
+        if (delayMs > 10000) {
+            delayMs = 10000;
+        }
+
+        DWORD pid = GetCurrentProcessId();
+        if (!dryRun) {
+            std::thread([delayMs, exitCode]() {
+                Sleep(delayMs);
+                ExitProcess(exitCode);
+            }).detach();
+        }
+
+        return {
+            {"type", "response"},
+            {"id", id},
+            {"status", "success"},
+            {"command", "exit_windbg"},
+            {"output", dryRun ? "WinDbg process exit dry run; no exit scheduled."
+                              : "WinDbg process exit scheduled."},
+            {"dry_run", dryRun},
+            {"pid", pid},
+            {"delay_ms", delayMs},
+            {"exit_code", exitCode},
+        };
+    }
+    catch (const std::exception& e) {
+        return CommandUtilities::CreateDetailedErrorResponse(
+            id, "exit_windbg",
+            std::string("ExitWinDbgHandler exception: ") + e.what(),
             ErrorCategory::InternalError);
     }
 }

@@ -162,6 +162,41 @@ def register_execution_tools(mcp: FastMCP):
             return enhanced_error.to_dict()
 
     @mcp.tool()
+    async def exit_windbg(
+        ctx: Context,
+        delay_ms: int = 250,
+        exit_code: int = 0,
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Ask the WinDbg process hosting windbgmcpExt.dll to exit itself.
+
+        Use this when external process cleanup fails due to elevation or
+        session permissions. The extension sends a response first, then exits
+        WinDbg after a short delay. Set dry_run=true to verify handler support
+        without closing WinDbg.
+        """
+        try:
+            bounded_delay = max(0, min(delay_ms, 10000))
+            return send_handler_command(
+                "exit_windbg",
+                timeout_ms=max(bounded_delay + 5000, 10000),
+                handler_args={
+                    "delay_ms": bounded_delay,
+                    "exit_code": exit_code,
+                    "dry_run": dry_run,
+                },
+            )
+        except Exception as e:
+            enhanced_error = enhance_error(
+                "unexpected",
+                tool_name="exit_windbg",
+                command="exit_windbg",
+                original_error=str(e),
+            )
+            return enhanced_error.to_dict()
+
+    @mcp.tool()
     async def run_sequence(ctx: Context, commands: List[str], stop_on_error: bool = False) -> Dict[str, Any]:
         """
         Execute a sequence of WinDbg commands with error handling and performance optimization.

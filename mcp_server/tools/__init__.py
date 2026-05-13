@@ -68,7 +68,13 @@ TOOL_CATEGORIES = {
         "description": "Tools for managing debugging sessions, connections, and session recovery"
     },
     "command_execution": {
-        "tools": ["run_command", "run_sequence", "breakpoint_and_continue"],
+        "tools": [
+            "run_command",
+            "run_sequence",
+            "break_in",
+            "exit_windbg",
+            "breakpoint_and_continue",
+        ],
         "description": "Tools for executing WinDbg commands with validation and error handling"
     },
     "analysis": {
@@ -97,4 +103,4 @@ def get_tool_info() -> dict:
         "categories": TOOL_CATEGORIES,
         "total_tools": sum(len(cat["tools"]) for cat in TOOL_CATEGORIES.values()),
         "architecture": "Modular tool organization with separate registration functions"
-    } 
+    }
